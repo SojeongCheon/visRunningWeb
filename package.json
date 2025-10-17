@@ -1,0 +1,13 @@
+{
+  "name": "visRunningWeb",
+  "private": true,
+  "scripts": {
+    "setup:api": "python3 -m venv services/api/.venv && services/api/.venv/bin/pip install fastapi uvicorn[standard] gpxpy python-multipart",
+    "dev:api": "services/api/.venv/bin/python -m uvicorn services.api.main:app --reload --port ${PORT_API:-8000}",
+    "dev:web": "pnpm --prefix apps/web dev",
+    "dev": "concurrently -k -n api,web -c cyan,green \"pnpm dev:api\" \"pnpm dev:web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
