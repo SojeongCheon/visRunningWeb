@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-import gpxpy, io, math
+import gpxpy, io, math, datetime as dt
 
 app = FastAPI()
 app.add_middleware(
@@ -10,31 +10,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# simple test endpoint
+def haversine_m(lat1, lon1, lat2, lon2):
+    R = 6371000
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ = math.radians(lat2 - lat1); dλ = math.radians(lon2 - lon1)
+    a = math.sin(dφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(dλ/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-def haversine_m(lat1, lon1, lat2, lon2):
-    R = 6371000
-    φ1, φ2 = math.radians(lat1), math.radians(lat2)
-    dφ = math.radians(lat2 - lat1)
-    dλ = math.radians(lon2 - lon1)
-    a = math.sin(dφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(dλ/2)**2
-    return 2 * R * math.asin(math.sqrt(a))
-
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
-    """Parse a GPX file and return its points + stats"""
+    """Parse a GPX and return points + simple stats.
+       (We include time fields, but the frontend won’t animate yet.)"""
     gpx = gpxpy.parse(io.StringIO((await file.read()).decode()))
     pts = []
-    total = 0
+    total = 0.0
+    t0: dt.datetime | None = None
+
     for trk in gpx.tracks:
         for seg in trk.segments:
             prev = None
             for p in seg.points:
+                if t0 is None and p.time:
+                    t0 = p.time
+                t = (p.time - t0).total_seconds() if (p.time and t0) else None
                 if prev:
                     total += haversine_m(prev.latitude, prev.longitude, p.latitude, p.longitude)
-                pts.append(dict(lat=p.latitude, lon=p.longitude, ele=p.elevation))
+                pts.append(dict(lat=p.latitude, lon=p.longitude, ele=p.elevation, t=t))
                 prev = p
-    return {"points": pts, "stats": {"distance_km": round(total/1000,2), "count": len(pts)}}
+
+    return {
+        "points": pts,
+        "stats": {
+            "distance_km": round(total/1000, 2),
+            "points": len(pts),
+            "duration_s": (pts[-1]["t"] if pts and pts[-1].get("t") is not None else None),
+        },
+    }
